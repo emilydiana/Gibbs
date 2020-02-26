@@ -2,8 +2,8 @@ n = 100;
 q = 0.05;
 Tau2 = 1;
 Sigma2 = 1;
-nrep = 10;
-nmc = 2*10; 
+nrep = 1;
+nmc = 2*10^5; 
 start_measure = 'prior';
 plotting = false;
 
@@ -37,7 +37,7 @@ for ps=1:length(predictors)
         GammaTrue = zeros(p,1);
         GammaTrue(1:s) = 1;
         gamma_array = zeros(p,nmc);
-        mc_error = zeros(nmc);
+        mc_error = zeros(nmc,1);
         for t = 1:nmc
              for i=1:p
                  prop_gamma = gamma;
@@ -56,13 +56,16 @@ for ps=1:length(predictors)
                  end
              end
              gamma_array(:,t)=gamma;
-             
+             mc_error(t) = mpm_err(gamma_array, GammaTrue);
         end  
+        figure;
+        plot(mc_error);
+        
         normalized_diff(r,ps) = mpm_err(gamma_array, GammaTrue);
-        if (plotting)
-            figure;
-            plot(normalized_diff);
-        end
+        %if (plotting)
+        %    figure;
+        %    plot(normalized_diff);
+        %end
     end
 end
 
