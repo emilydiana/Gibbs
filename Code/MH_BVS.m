@@ -1,18 +1,18 @@
-n = 100;
+n = 1000;
 q = 0.05;
 Tau2 = 1;
 Sigma2 = 1;
 nrep = 10;
 nmc = 2*10^2; 
 start_measure = 'prior';
-plotting = false;
 
-predictors = [50];
-%normalized_diff = zeros(nrep,length(predictors));
+predictors = [50, 100, 150, 200, 250];
+
 tic;
+end_diff = zeros(length(predictors), nrep);
+
 for ps=1:length(predictors)
     p = predictors(ps);
-    average_diff = zeros(nrep,1);
     for r=1:nrep
         disp(['p = ' num2str(p) ' rep = ' num2str(r)]);
         toc; tic;
@@ -59,20 +59,25 @@ for ps=1:length(predictors)
              gamma_array(:,t)=gamma;
              mc_error(t) = mpm_err(gamma_array, GammaTrue);
         end  
-        figure;
-        plot(mc_error);
+        %figure;
+        %plot(mc_error);
         
         %normalized_diff(r,ps) = mpm_err(gamma_array, GammaTrue);
         %if (plotting)
         %    figure;
         %    plot(normalized_diff);
         %end
+        end_diff(ps,r)=mc_error(nmc);
     end
-    average_diff(r)=mean(mc_error(nmc));
 end
 
+average_diffs=mean(end_diff,2);
+
 figure;
-plot(average_diff);
+plot(predictors, average_diffs);
+xlabel('Dimension');
+ylabel('Normalized Error');
+title('Normalized Error of MPM Estimator');
 
 
 function error = mpm_err(gamma_array, GammaTrue)
