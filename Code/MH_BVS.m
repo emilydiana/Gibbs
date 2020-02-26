@@ -58,10 +58,7 @@ for ps=1:length(predictors)
              gamma_array(:,t)=gamma;
              
         end  
-        gamma_totals = sum(gamma_array,2);
-        median_model = gamma_totals >= (nmc/2);
-        diff = sum(median_model ~= GammaTrue);
-        normalized_diff(r,ps) = diff/p;
+        normalized_diff(r,ps) = mpm_err(gamma_array, GammaTrue);
         if (plotting)
             figure;
             plot(normalized_diff);
@@ -69,6 +66,13 @@ for ps=1:length(predictors)
     end
 end
 
+function error = mpm_err(gamma_array, GammaTrue)
+        gamma_totals = sum(gamma_array,2);
+        [pred,iter] = size(gamma_array); 
+        median_model = gamma_totals >= (iter/2);
+        diff = sum(median_model ~= GammaTrue);
+        error = diff/pred;
+end
 
 function prior = pi_gamma(q,gamma)
     p = length(gamma);
