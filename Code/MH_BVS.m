@@ -2,16 +2,17 @@ n = 100;
 q = 0.05;
 Tau2 = 1;
 Sigma2 = 1;
-nrep = 1;
-nmc = 2*10^5; 
+nrep = 10;
+nmc = 2*10^2; 
 start_measure = 'prior';
 plotting = false;
 
 predictors = [50];
-normalized_diff = zeros(nrep,length(predictors));
+%normalized_diff = zeros(nrep,length(predictors));
 tic;
 for ps=1:length(predictors)
     p = predictors(ps);
+    average_diff = zeros(nrep,1);
     for r=1:nrep
         disp(['p = ' num2str(p) ' rep = ' num2str(r)]);
         toc; tic;
@@ -61,13 +62,18 @@ for ps=1:length(predictors)
         figure;
         plot(mc_error);
         
-        normalized_diff(r,ps) = mpm_err(gamma_array, GammaTrue);
+        %normalized_diff(r,ps) = mpm_err(gamma_array, GammaTrue);
         %if (plotting)
         %    figure;
         %    plot(normalized_diff);
         %end
     end
+    average_diff(r)=mean(mc_error(nmc));
 end
+
+figure;
+plot(average_diff);
+
 
 function error = mpm_err(gamma_array, GammaTrue)
         gamma_totals = sum(gamma_array,2);
