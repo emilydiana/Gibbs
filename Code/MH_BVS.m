@@ -1,4 +1,4 @@
-samples = [50, 100, 500];
+samples = [100];
 %samples = [500];
 q = 0.05;
 Tau2 = 1;
@@ -8,7 +8,7 @@ nmc = 2*10^2;
 start_measure = 'prior';
 plotting_1 = false;
 plotting_2 = false;
-predictors = [50, 100, 150, 200, 250];
+predictors = [1000];
 %predictors = [250];
 
 tic;
@@ -46,26 +46,44 @@ for ns = 1:length(samples)
             gamma_array = zeros(p,nmc);
             mc_error = zeros(nmc,1);
             for t = 1:nmc
-                %Sample j uniformly on integers from 1 to d
+                %Sample j uniformly on integers from 1 to p
                  for i=1:p
-                     prop_gamma = gamma;
-                     if gamma(i)==1
-                         prop_gamma(i)=0;
+                     gamma_zero = gamma;
+                     gamma_zero(i)=0;
+                     gamma_one = gamma;
+                     gamma_one(i)=1;
+                     M_zero = logml(XX,Xy,yy,gamma_zero,Tau2,n);
+                     log_zero_prior = log_pi_gamma(q,gamma_zero);
+                     M_one = logml(XX,Xy,yy,gamma_one,Tau2,n);
+                     log_one_prior = log_pi_gamma(q,gamma_one);
+                     f_zero = M_zero + log_zero_prior;
+                     f_one = M_one + log_one_prior;
+                     p_one=1/(1+exp(f_zero - f_one));
+                     choose_one = binornd(1,p_one);
+                     if choose_one==1
+                         gamma(i)=1;
                      else
-                         prop_gamma(i)=1;
+                         gamma(i)=0;
                      end
-                     Mprop = logml(XX,Xy,yy,prop_gamma,Tau2,n);
-                     log_prop_prior = log(pi_gamma(q,prop_gamma));
-                     Mcurr = logml(XX,Xy,yy,gamma,Tau2,n);
-                     log_curr_prior = log(pi_gamma(q,gamma));
+                     %prop_gamma = gamma;
+                     %if gamma(i)==1
+                     %    prop_gamma(i)=0;
+                     %else
+                     %    prop_gamma(i)=1;
+                     %end
+                     %Mprop = logml(XX,Xy,yy,prop_gamma,Tau2,n);
+                     %log_prop_prior = log(pi_gamma(q,prop_gamma));
+                     %Mcurr = logml(XX,Xy,yy,gamma,Tau2,n);
+                     %log_curr_prior = log(pi_gamma(q,gamma));
                      %Do this probabilistically
-                     if (Mprop + log_prop_prior > Mcurr + log_curr_prior)
-                         disp('switch');
-                         gamma=prop_gamma;
-                     end
+                     %if (Mprop + log_prop_prior > Mcurr + log_curr_prior)
+                     %    disp('switch');
+                     %    gamma=prop_gamma;
+                     %end
                  end
                  gamma_array(:,t)=gamma;
-                 mc_error(t) = mpm_err(gamma_array, GammaTrue,p,t);
+                 mc_error(t) = mpm_err(gamma_array, GammaTrue,p,t); %get rid of this for speed
+                 
             end  
             
             if(plotting_1)
@@ -112,10 +130,23 @@ function error = mpm_err(gamma_array, GammaTrue, p, t)
         error = diff/p;
 end
 
+function mode_error = mode_err(gamma_array, GammaTrue, p, t)
+    curr = gamma_array(:,1:t);
+    mode = findMode(curr);
+    diff = sum(mode ~= GammaTrue);
+    error = diff/p;
+end
+
 function prior = pi_gamma(q,gamma)
     p = length(gamma);
     size = sum(gamma);
     prior = q^size*(1-q)^(p-size);
+end
+
+function log_prior = log_pi_gamma(q,gamma)
+    p = length(gamma);
+    size = sum(gamma);
+    prior = size*log(q) + (p-size)*log(1-q);
 end
 
 function M = logml(XX,Xy,yy,gamma,Tau2,n)
@@ -133,4 +164,20 @@ function M = logml(XX,Xy,yy,gamma,Tau2,n)
     end
 end
 
+function mode_gamma=findMode(gamma_array)
+    [d, ~]=size(gamma_array);
+    gamma_decimal = bi2de(gamma_array');
+    mode_decimal = mode(gamma_decimal);
+    mode_gamma = de2bi(mode_decimal);
+    mode_gamma(d)=0;
+    mode_gamma = mode_gamma';
+end
 
+function fn = false_neg(guess, truth)
+    fn = sum(guess < truth);
+end
+
+function fp = false_pos(guess, truth)
+    fp=sum(guess>truth);
+end
+        
