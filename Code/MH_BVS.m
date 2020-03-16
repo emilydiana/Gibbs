@@ -1,19 +1,28 @@
-samples = [100];
-%samples = [500];
+%samples = [50, 100, 150, 200];
+samples = [10];
 q = 0.05;
 Tau2 = 1;
 Sigma2 = 1;
-nrep = 10;
-nmc = 2*10^2; 
+nrep = 1;
+nmc = 2*10^5; 
+interval = 100;
 start_measure = 'prior';
-plotting_1 = false;
+plotting_1 = true;
 plotting_2 = false;
-predictors = [1000];
-%predictors = [250];
+%predictors = [50, 100, 150, 200, 250];
+predictors = [10];
 
 tic;
-end_diff = zeros(length(predictors), nrep);
-average_diff = zeros(length(samples), length(predictors));
+%end_diff = zeros(length(predictors), nrep);
+end_mode_diff = zeros(length(predictors), nrep);
+end_med_diff = zeros(length(predictors), nrep);
+end_mode_fp = zeros(length(predictors), nrep);
+end_med_fp = zeros(length(predictors), nrep);
+%average_diff = zeros(length(samples), length(predictors));
+average_med_diff = zeros(length(samples), length(predictors));
+average_mode_diff = zeros(length(samples), length(predictors));
+fp_med = zeros(length(samples), length(predictors));
+fp_mode= zeros(length(samples), length(predictors));
 
 for ns = 1:length(samples)
     n = samples(ns);
@@ -29,6 +38,14 @@ for ns = 1:length(samples)
             Beta(1:s) = normrnd(0,sqrt(Tau2),[s 1]);
 
             y = X*Beta + normrnd(0,sqrt(Sigma2),[n 1]);
+            
+            [B, FitInfo] = lasso(X,y,'CV',10);
+            lassoPlot(B,FitInfo,'PlotType','CV');
+            legend('show') % Show legend
+            idxLambda1SE = FitInfo.Index1SE;
+            coef = B(:,idxLambda1SE);
+            %coef0 = FitInfo.Intercept(idxLambda1SE); % do we have an
+            %intercept??? I think no
 
             yy = y'*y;
             XX = X'*X;
@@ -44,10 +61,14 @@ for ns = 1:length(samples)
             GammaTrue = zeros(p,1);
             GammaTrue(1:s) = 1;
             gamma_array = zeros(p,nmc);
-            mc_error = zeros(nmc,1);
+            mpm_error = zeros(floor(nmc/interval),1); %can do this every t iterations later for speed
+            mode_error = zeros(floor(nmc/interval),1);
+            mpm_fp = zeros(floor(nmc/interval),1); %can do this every t iterations later for speed
+            mode_fp = zeros(floor(nmc/interval),1);
             for t = 1:nmc
                 %Sample j uniformly on integers from 1 to p
-                 for i=1:p
+                 %for i=1:p
+                     i = randsample(p,1);
                      gamma_zero = gamma;
                      gamma_zero(i)=0;
                      gamma_one = gamma;
@@ -65,76 +86,125 @@ for ns = 1:length(samples)
                      else
                          gamma(i)=0;
                      end
-                     %prop_gamma = gamma;
-                     %if gamma(i)==1
-                     %    prop_gamma(i)=0;
-                     %else
-                     %    prop_gamma(i)=1;
-                     %end
-                     %Mprop = logml(XX,Xy,yy,prop_gamma,Tau2,n);
-                     %log_prop_prior = log(pi_gamma(q,prop_gamma));
-                     %Mcurr = logml(XX,Xy,yy,gamma,Tau2,n);
-                     %log_curr_prior = log(pi_gamma(q,gamma));
-                     %Do this probabilistically
-                     %if (Mprop + log_prop_prior > Mcurr + log_curr_prior)
-                     %    disp('switch');
-                     %    gamma=prop_gamma;
-                     %end
-                 end
-                 gamma_array(:,t)=gamma;
-                 mc_error(t) = mpm_err(gamma_array, GammaTrue,p,t); %get rid of this for speed
-                 
-            end  
-            
-            if(plotting_1)
-                figure;
-                plot(mc_error);
-                xlabel('Iteration');
-                ylabel('Normalized Error');
-                title('Normalized Error of MPM Estimator Through Iterations');
+                 %end
+                    gamma_array(:,t)=gamma;
+                    %[mpm_error(t), mpm_fp(t)] = mpm_err(gamma_array, GammaTrue,p,t); %get rid of this for speed
+                    %[mode_error(t), mode_fp(t)] = mode_err(gamma_array, GammaTrue,p,t);
             end
+            
+            %if(plotting_1)
+            %    figure;
+            %    hold on;
+            %    p1 = plot(mpm_error);
+            %    p2 = plot(mode_error);
+            %    p3 = plot(mpm_fp);
+            %    p4 = plot(mode_fp);
+            %    xlabel('Iteration');
+            %    ylabel('Normalized Error');
+            %    title('Normalized Error of MPM Estimator Through Iterations');
+            %    legend([p1,p2,p3,p4],{'Error MPM','Error HPM','FP MPM','FP HPM'});
+            %end
             
             %normalized_diff(r,ps) = mpm_err(gamma_array, GammaTrue);
             %if (plotting)
             %    figure;
             %    plot(normalized_diff);
             %end
-            end_diff(ps,r)=mc_error(nmc);
+            %end_diff(ps,r)=mpm_error(nmc);
+            final_model = gamma_array(:,end);
+            for j = 1: length(mpm_error)
+               [mpm_error(j), mpm_fp(j)] = mpm_err(gamma_array, final_model,p,j*interval); %get rid of this for speed
+               [mode_error(j), mode_fp(j)] = mode_err(gamma_array, final_model,p,j*interval);
+            end
+            
+            if(plotting_1)
+                figure;
+                hold on;
+                p1 = plot(mpm_error);
+                p2 = plot(mode_error);
+                p3 = plot(mpm_fp);
+                p4 = plot(mode_fp);
+                xlabel('Iteration Interval');
+                ylabel('Normalized Error');
+                title('Normalized Error of MPM Estimator Through Iterations');
+                legend([p1,p2,p3,p4],{'Error MPM','Error HPM','FP MPM','FP HPM'});
+            end
+            
+            [end_med_diff(ps,r), end_med_fp(ps,r)] = mpm_err(gamma_array, final_model, p, nmc);
+            [end_mode_diff(ps,r),  end_mode_fp(ps,r)] = mode_err(gamma_array, final_model, p, nmc);
         end
     end
-    average_diff(ns,:)=transpose(mean(end_diff,2));
+    average_med_diff(ns,:)=transpose(mean(end_med_diff,2));
+    average_mode_diff(ns,:)=transpose(mean(end_mode_diff,2));
+    fp_med(ns,:)=transpose(mean(end_med_fp,2));
+    fp_mode(ns,:)=transpose(mean(end_mode_fp,2));
 end
 
 if(plotting_2)
     for i = 1:length(samples)
+        n = samples(i);
         figure;
-        plot(predictors, average_diff(i,:));
+        hold on;
+        p1 = plot(predictors, average_med_diff(i,:));
+        p2 = plot(predictors, average_mode_diff(i,:));
+        p3 = plot(predictors, fp_med(i,:));
+        p4 = plot(predictors, fp_mode(i,:));
         xlabel('Dimension');
         ylabel('Normalized Error');
-        title('Normalized Error of MPM Estimator with Varying Dimension');
+        title(sprintf('Error with %d Samples and Varying Dimension',n));
+        legend([p1,p2,p3,p4],{'Error MPM','Error HPM','FP MPM', 'FP HPM'});
     end
 
     for j = 1:length(predictors)
+        p = predictors(i);
         figure;
-        plot(samples, average_diff(:,j));
+        hold on;
+        p1 = plot(samples, average_med_diff(:,j));
+        p2 = plot(samples, average_mode_diff(:,j));
+        p3 = plot(samples, fp_med(:,j));
+        p4 = plot(samples, fp_mode(:,j));
         xlabel('Sample Size');
         ylabel('Normalized Error');
-        title('Normalized Error of MPM Estimator with Varying Sample Size');
+        title(sprintf('Error with %d Predictors and Varying Sample Size',p));
+        legend([p1,p2,p3,p4],{'Error MPM','Error HPM', 'FP MPM', 'FP HPM'});
     end
+    
+    
+    
+    %for i = 1:length(samples)
+    %    figure;
+    %    plot(predictors, average_mode_diff(i,:));
+    %    xlabel('Dimension');
+    %    ylabel('Normalized Error');
+    %    title('Normalized Error of HPM Estimator with Varying Dimension');
+    %end
+
+    %for j = 1:length(predictors)
+    %    figure;
+    %    plot(samples, average_mode_diff(:,j));
+    %    xlabel('Sample Size');
+    %    ylabel('Normalized Error');
+    %    title('Normalized Error of HPM Estimator with Varying Sample Size');
+    %end
 end
 
-function error = mpm_err(gamma_array, GammaTrue, p, t)
+
+function [error, fp] = mpm_err(gamma_array, gamma_end, p, t)
         gamma_totals = sum(gamma_array,2);
         median_model = gamma_totals >= (t/2);
-        diff = sum(median_model ~= GammaTrue);
+        diff = sum(median_model ~= gamma_end);
+        fp=sum(median_model > gamma_end);
+        fp=fp/p;
         error = diff/p;
 end
 
-function mode_error = mode_err(gamma_array, GammaTrue, p, t)
+function [mode_error, fp] = mode_err(gamma_array, gamma_end, p, t)
     curr = gamma_array(:,1:t);
     mode = findMode(curr);
-    diff = sum(mode ~= GammaTrue);
-    error = diff/p;
+    diff = sum(mode ~= gamma_end);
+    fp=sum(mode>gamma_end);
+    fp=fp/p;
+    mode_error = diff/p;
 end
 
 function prior = pi_gamma(q,gamma)
@@ -146,7 +216,7 @@ end
 function log_prior = log_pi_gamma(q,gamma)
     p = length(gamma);
     size = sum(gamma);
-    prior = size*log(q) + (p-size)*log(1-q);
+    log_prior = size*log(q) + (p-size)*log(1-q);
 end
 
 function M = logml(XX,Xy,yy,gamma,Tau2,n)
@@ -173,11 +243,20 @@ function mode_gamma=findMode(gamma_array)
     mode_gamma = mode_gamma';
 end
 
-function fn = false_neg(guess, truth)
-    fn = sum(guess < truth);
-end
+%function fn = false_neg(guess, truth,p)
+%    fn = sum(guess < truth);
+%    fn = fn/p;
+%end
 
-function fp = false_pos(guess, truth)
-    fp=sum(guess>truth);
-end
+%function fp_mode = false_pos(gamma_array, truth,p)
+%    guess = findMode(gamma_array);
+%    fp=sum(guess>truth);
+%    fp = fp/p;
+%end
+
+%function fp_median = false_pos(gamma_array, truth,p)
+%    guess = findMed(gamma_array);
+%    fp=sum(guess>truth);
+%    fp = fp/p;
+%end
         
