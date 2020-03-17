@@ -65,29 +65,36 @@ for ns = 1:length(samples)
             mode_error = zeros(floor(nmc/interval),1);
             mpm_fp = zeros(floor(nmc/interval),1); %can do this every t iterations later for speed
             mode_fp = zeros(floor(nmc/interval),1);
+            
+            M_curr = logml(XX,Xy,yy,gamma,Tau2,n);
+            prior_curr = log_pi_gamma(q,gamma);
+            f_curr = M_curr + prior_curr;
+            
             for t = 1:nmc
-                %Sample j uniformly on integers from 1 to p
-                 %for i=1:p
-                     i = randsample(p,1);
-                     gamma_zero = gamma;
-                     gamma_zero(i)=0;
-                     gamma_one = gamma;
-                     gamma_one(i)=1;
-                     M_zero = logml(XX,Xy,yy,gamma_zero,Tau2,n);
-                     log_zero_prior = log_pi_gamma(q,gamma_zero);
-                     M_one = logml(XX,Xy,yy,gamma_one,Tau2,n);
-                     log_one_prior = log_pi_gamma(q,gamma_one);
-                     f_zero = M_zero + log_zero_prior;
-                     f_one = M_one + log_one_prior;
-                     p_one=1/(1+exp(f_zero - f_one));
-                     choose_one = binornd(1,p_one);
-                     if choose_one==1
-                         gamma(i)=1;
-                     else
-                         gamma(i)=0;
-                     end
-                 %end
-                    gamma_array(:,t)=gamma;
+                i = randsample(p,1);              
+                gamma_zero = gamma;
+                gamma_zero(i)=0;
+                gamma_one = gamma;
+                gamma_one(i)=1;
+                f_zero = f_curr;
+                f_one = f_curr;
+                if (gamma_zero == gamma)
+                    M_one = logml(XX,Xy,yy,gamma_one,Tau2,n);
+                    log_one_prior = log_pi_gamma(q,gamma_one);
+                    f_one = M_one + log_one_prior;
+                else
+                    M_zero = logml(XX,Xy,yy,gamma_zero,Tau2,n);
+                    log_zero_prior = log_pi_gamma(q,gamma_zero);
+                    f_zero = M_zero + log_zero_prior;
+                end
+                p_one=1/(1+exp(f_zero - f_one));
+                choose_one = binornd(1,p_one);
+                if choose_one==1
+                    gamma(i)=1;
+                else
+                    gamma(i)=0;
+                end
+                gamma_array(:,t)=gamma;
                     %[mpm_error(t), mpm_fp(t)] = mpm_err(gamma_array, GammaTrue,p,t); %get rid of this for speed
                     %[mode_error(t), mode_fp(t)] = mode_err(gamma_array, GammaTrue,p,t);
             end
