@@ -1,22 +1,24 @@
 samples = [100];
-q = 0.05;
+q = 0.75;
 Tau2 = 1;
 Sigma2 = 1;
 nrep = 1;
 nmc = 2*10^5; 
-interval = 100;
+%interval = 1;
+interval = 1000;
 start_measure = 'prior';
+random_update=true;
 plotting_1 = true;
-plotting_2 = true;
+plotting_2 = false;
+%predictors = 100;
 predictors = [100:100:1000];
+epsilon = 0.001;
 
 tic;
-%end_diff = zeros(length(predictors), nrep);
 end_mode_diff = zeros(length(predictors), nrep);
 end_med_diff = zeros(length(predictors), nrep);
 end_mode_fp = zeros(length(predictors), nrep);
 end_med_fp = zeros(length(predictors), nrep);
-%average_diff = zeros(length(samples), length(predictors));
 average_med_diff = zeros(length(samples), length(predictors));
 average_mode_diff = zeros(length(samples), length(predictors));
 fp_med = zeros(length(samples), length(predictors));
@@ -35,14 +37,6 @@ for ns = 1:length(samples)
             Beta(1:s) = normrnd(0,sqrt(Tau2),[s 1]);
 
             y = X*Beta + normrnd(0,sqrt(Sigma2),[n 1]);
-            
-            %[B, FitInfo] = lasso(X,y,'CV',10);
-            %lassoPlot(B,FitInfo,'PlotType','CV');
-            %legend('show') % Show legend
-            %idxLambda1SE = FitInfo.Index1SE;
-            %coef = B(:,idxLambda1SE);
-            %coef0 = FitInfo.Intercept(idxLambda1SE); % do we have an
-            %intercept??? I think no
 
             yy = y'*y;
             XX = X'*X;
@@ -66,9 +60,13 @@ for ns = 1:length(samples)
             M_curr = logml(XX,Xy,yy,gamma,Tau2,n);
             prior_curr = log_pi_gamma(q,gamma);
             f_curr = M_curr + prior_curr;
-            
+            i=1;
             for t = 1:nmc
-                i = randsample(p,1);              
+                if random_update
+                    i = randsample(p,1);    
+                else
+                    i = mod(i+1,p);
+                end
                 gamma_zero = gamma;
                 gamma_zero(i)=0;
                 gamma_one = gamma;
@@ -115,10 +113,12 @@ for ns = 1:length(samples)
             %    plot(normalized_diff);
             %end
             %end_diff(ps,r)=mpm_error(nmc);
-            final_model = gamma_array(:,end);
+            final_model_med=findMed(gamma_array, nmc);
+            final_model_mode=findMode(gamma_array);
+
             for j = 1: length(mpm_error)
-               [mpm_error(j), mpm_fp(j)] = mpm_err(gamma_array, final_model,p,j*interval); %get rid of this for speed
-               [mode_error(j), mode_fp(j)] = mode_err(gamma_array, final_model,p,j*interval);
+               [mpm_error(j), mpm_fp(j)] = mpm_err(gamma_array, final_model_med,p,j*interval); %get rid of this for speed
+               [mode_error(j), mode_fp(j)] = mode_err(gamma_array, final_model_mode,p,j*interval);
             end
             
             if(plotting_1)
@@ -128,14 +128,16 @@ for ns = 1:length(samples)
                 p2 = plot(mode_error);
                 p3 = plot(mpm_fp);
                 p4 = plot(mode_fp);
+                p5 = xline(conv_ind(mpm_error,epsilon,nmc),'--');
+                p6 = xline(conv_ind(mode_error,epsilon,nmc),'-');
                 xlabel('Iteration Interval');
                 ylabel('Normalized Error');
-                title('Normalized Error of MPM Estimator Through Iterations');
-                legend([p1,p2,p3,p4],{'Error MPM','Error HPM','FP MPM','FP HPM'});
+                title(sprintf('Normalized Error with %d Predictors and Sample Size 100',p));
+                legend([p1,p2,p3,p4,p5,p6],{'Error MPM','Error HPM','FP MPM','FP HPM','MPM Conv','HPM Conv'});
             end
             
-            [end_med_diff(ps,r), end_med_fp(ps,r)] = mpm_err(gamma_array, final_model, p, nmc);
-            [end_mode_diff(ps,r),  end_mode_fp(ps,r)] = mode_err(gamma_array, final_model, p, nmc);
+            [end_med_diff(ps,r), end_med_fp(ps,r)] = mpm_err(gamma_array, final_model_med, p, nmc);
+            [end_mode_diff(ps,r),  end_mode_fp(ps,r)] = mode_err(gamma_array, final_model_mode, p, nmc);
         end
     end
     average_med_diff(ns,:)=transpose(mean(end_med_diff,2));
@@ -194,8 +196,9 @@ end
 
 
 function [error, fp] = mpm_err(gamma_array, gamma_end, p, t)
-        gamma_totals = sum(gamma_array,2);
-        median_model = gamma_totals >= (t/2);
+        median_model = findMed(gamma_array,t);
+        %gamma_totals = sum(gamma_array,2);
+        %median_model = gamma_totals >= (t/2);
         diff = sum(median_model ~= gamma_end);
         fp=sum(median_model > gamma_end);
         fp=fp/p;
@@ -232,6 +235,11 @@ function M = logml(XX,Xy,yy,gamma,Tau2,n)
     end
 end
 
+function med_gamma = findMed(gamma_array, n)
+        gamma_totals = sum(gamma_array(:,[1:n]),2);
+        med_gamma = gamma_totals >= (n/2);
+end
+
 function mode_gamma=findMode(gamma_array)
     [d, ~]=size(gamma_array);
     gamma_decimal = bi2de(gamma_array');
@@ -239,4 +247,18 @@ function mode_gamma=findMode(gamma_array)
     mode_gamma = de2bi(mode_decimal);
     mode_gamma(d)=0;
     mode_gamma = mode_gamma';
+end
+
+function ind = conv_ind(errors, epsilon,nmc)
+   temp = errors >= epsilon;
+   ind = find(temp, 1, 'last');
+   ind = min(ind + 1, nmc);
+end
+
+function posterior_mean = bma(gamma_array,p,nmc)
+    beta_sampled = zeros(p,nmc);
+    for i = 1:nmc
+        beta_sampled(:,i) = normrnd(0,sqrt(Tau2),[p 1]).*gamma_array(:,i);
+    end
+    posterior_mean = ??;
 end
