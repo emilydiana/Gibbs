@@ -4,17 +4,18 @@ Tau2 = 1;
 Sigma2 = 1;
 nrep = 1;
 nmc = 2*10^5; 
-%interval = 1;
-interval = 1000;
+interval = 1000; %Number of MC iterations between each plotting point
 start_measure = 'prior';
 random_update=true;
 plotting_1 = true;
 plotting_2 = false;
-%predictors = 100;
+plotting_3 = false;
 predictors = [100:100:1000];
 epsilon = 0.001;
 
 tic;
+
+%Preallocated arrays for plotting
 end_mode_diff = zeros(length(predictors), nrep);
 end_med_diff = zeros(length(predictors), nrep);
 end_mode_fp = zeros(length(predictors), nrep);
@@ -31,7 +32,7 @@ for ns = 1:length(samples)
         for r=1:nrep
             disp(['p = ' num2str(p) ' rep = ' num2str(r)]);
             toc; tic;
-            X = normrnd(0,1,[n p]);             %Let X be identity???
+            X = normrnd(0,1,[n p]); 
             Beta = zeros(p,1);
             s = binornd(p,q);
             Beta(1:s) = normrnd(0,sqrt(Tau2),[s 1]);
@@ -52,9 +53,11 @@ for ns = 1:length(samples)
             GammaTrue = zeros(p,1);
             GammaTrue(1:s) = 1;
             gamma_array = zeros(p,nmc);
-            mpm_error = zeros(floor(nmc/interval),1); %can do this every t iterations later for speed
+            
+            %Allocate more plotting arrays
+            mpm_error = zeros(floor(nmc/interval),1); 
             mode_error = zeros(floor(nmc/interval),1);
-            mpm_fp = zeros(floor(nmc/interval),1); %can do this every t iterations later for speed
+            mpm_fp = zeros(floor(nmc/interval),1); 
             mode_fp = zeros(floor(nmc/interval),1);
             
             M_curr = logml(XX,Xy,yy,gamma,Tau2,n);
@@ -90,31 +93,10 @@ for ns = 1:length(samples)
                     gamma(i)=0;
                 end
                 gamma_array(:,t)=gamma;
-                    %[mpm_error(t), mpm_fp(t)] = mpm_err(gamma_array, GammaTrue,p,t); %get rid of this for speed
-                    %[mode_error(t), mode_fp(t)] = mode_err(gamma_array, GammaTrue,p,t);
             end
-            
-            %if(plotting_1)
-            %    figure;
-            %    hold on;
-            %    p1 = plot(mpm_error);
-            %    p2 = plot(mode_error);
-            %    p3 = plot(mpm_fp);
-            %    p4 = plot(mode_fp);
-            %    xlabel('Iteration');
-            %    ylabel('Normalized Error');
-            %    title('Normalized Error of MPM Estimator Through Iterations');
-            %    legend([p1,p2,p3,p4],{'Error MPM','Error HPM','FP MPM','FP HPM'});
-            %end
-            
-            %normalized_diff(r,ps) = mpm_err(gamma_array, GammaTrue);
-            %if (plotting)
-            %    figure;
-            %    plot(normalized_diff);
-            %end
-            %end_diff(ps,r)=mpm_error(nmc);
-            final_model_med=findMed(gamma_array, nmc);
-            final_model_mode=findMode(gamma_array);
+
+            final_model_med  = findMed(gamma_array, nmc);
+            final_model_mode = findMode(gamma_array);
 
             for j = 1: length(mpm_error)
                [mpm_error(j), mpm_fp(j)] = mpm_err(gamma_array, final_model_med,p,j*interval); %get rid of this for speed
@@ -160,7 +142,9 @@ if(plotting_2)
         title(sprintf('Error with %d Samples and Varying Dimension',n));
         legend([p1,p2,p3,p4],{'Error MPM','Error HPM','FP MPM', 'FP HPM'});
     end
+end
 
+if(plotting_3)
     for j = 1:length(predictors)
         p = predictors(i);
         figure;
@@ -174,37 +158,36 @@ if(plotting_2)
         title(sprintf('Error with %d Predictors and Varying Sample Size',p));
         legend([p1,p2,p3,p4],{'Error MPM','Error HPM', 'FP MPM', 'FP HPM'});
     end
-    
-    
-    
-    %for i = 1:length(samples)
-    %    figure;
-    %    plot(predictors, average_mode_diff(i,:));
-    %    xlabel('Dimension');
-    %    ylabel('Normalized Error');
-    %    title('Normalized Error of HPM Estimator with Varying Dimension');
-    %end
+end  
 
-    %for j = 1:length(predictors)
-    %    figure;
-    %    plot(samples, average_mode_diff(:,j));
-    %    xlabel('Sample Size');
-    %    ylabel('Normalized Error');
-    %    title('Normalized Error of HPM Estimator with Varying Sample Size');
-    %end
+%Calculate median
+function med_gamma = findMed(gamma_array, n)
+        gamma_totals = sum(gamma_array(:,[1:n]),2);
+        med_gamma = gamma_totals >= (n/2);
 end
 
+%Calculate mode
+function mode_gamma=findMode(gamma_array)
+    [d, ~]=size(gamma_array);
+    gamma_decimal = bi2de(gamma_array');
+    mode_decimal = mode(gamma_decimal);
+    mode_gamma = de2bi(mode_decimal);
+    mode_gamma(d)=0;
+    mode_gamma = mode_gamma';
+end
 
+%Calculate error and false positive rate for MPM compared to empirical
+%limit
 function [error, fp] = mpm_err(gamma_array, gamma_end, p, t)
         median_model = findMed(gamma_array,t);
-        %gamma_totals = sum(gamma_array,2);
-        %median_model = gamma_totals >= (t/2);
         diff = sum(median_model ~= gamma_end);
         fp=sum(median_model > gamma_end);
         fp=fp/p;
         error = diff/p;
 end
 
+%Calculate error and false positive rate for HPM compared to empirical
+%limit
 function [mode_error, fp] = mode_err(gamma_array, gamma_end, p, t)
     curr = gamma_array(:,1:t);
     mode = findMode(curr);
@@ -214,12 +197,21 @@ function [mode_error, fp] = mode_err(gamma_array, gamma_end, p, t)
     mode_error = diff/p;
 end
 
+%Calculate iteration at which convergence has been reached
+function ind = conv_ind(errors, epsilon,nmc)
+   temp = errors >= epsilon;
+   ind = find(temp, 1, 'last');
+   ind = min(ind + 1, nmc);
+end
+
+%Calculate log prior for gamma vector
 function log_prior = log_pi_gamma(q,gamma)
     p = length(gamma);
     size = sum(gamma);
     log_prior = size*log(q) + (p-size)*log(1-q);
 end
 
+%Gaussian log likelihood
 function M = logml(XX,Xy,yy,gamma,Tau2,n)
     m = sum(gamma);
     if m==0
@@ -233,26 +225,6 @@ function M = logml(XX,Xy,yy,gamma,Tau2,n)
         CiXyg = Ci'\Xyg;
         M = gammaln(n/2)-sum(log(sqrt(2*pi).*diag(C)))-(n/2).*log(.5.*(yy-(CiXyg'*CiXyg)));
     end
-end
-
-function med_gamma = findMed(gamma_array, n)
-        gamma_totals = sum(gamma_array(:,[1:n]),2);
-        med_gamma = gamma_totals >= (n/2);
-end
-
-function mode_gamma=findMode(gamma_array)
-    [d, ~]=size(gamma_array);
-    gamma_decimal = bi2de(gamma_array');
-    mode_decimal = mode(gamma_decimal);
-    mode_gamma = de2bi(mode_decimal);
-    mode_gamma(d)=0;
-    mode_gamma = mode_gamma';
-end
-
-function ind = conv_ind(errors, epsilon,nmc)
-   temp = errors >= epsilon;
-   ind = find(temp, 1, 'last');
-   ind = min(ind + 1, nmc);
 end
 
 function posterior_mean = bma(gamma_array,p,nmc)
