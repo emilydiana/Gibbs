@@ -1,6 +1,6 @@
 samples = [100];
 q = 0.75;
-Tau2 = 1;
+Tau2 = 4;
 Sigma2 = 1;
 nrep = 1;
 nmc = 2*10^5; 
@@ -10,7 +10,8 @@ random_update=true;
 plotting_1 = true;
 plotting_2 = false;
 plotting_3 = false;
-predictors = [100:100:1000];
+predictors = [10 50 100 200 400 600 800 1000];
+%predictors = [100:100:1000];
 epsilon = 0.001;
 
 tic;
@@ -20,6 +21,14 @@ end_mode_diff = zeros(length(predictors), nrep);
 end_med_diff = zeros(length(predictors), nrep);
 end_mode_fp = zeros(length(predictors), nrep);
 end_med_fp = zeros(length(predictors), nrep);
+mse_diff = zeros(length(predictors), nrep);
+med_size = zeros(length(predictors), nrep);
+mode_size = zeros(length(predictors), nrep);
+prob_one = zeros(length(predictors), nrep);
+prob_two = zeros(length(predictors), nrep);
+prob_three = zeros(length(predictors), nrep);
+size_one = zeros(length(predictors), nrep);
+size_two = zeros(length(predictors), nrep);size_three = zeros(length(predictors), nrep);
 average_med_diff = zeros(length(samples), length(predictors));
 average_mode_diff = zeros(length(samples), length(predictors));
 fp_med = zeros(length(samples), length(predictors));
@@ -32,6 +41,9 @@ for ns = 1:length(samples)
         for r=1:nrep
             disp(['p = ' num2str(p) ' rep = ' num2str(r)]);
             toc; tic;
+            %Add correlation?
+            %Sigma = rho.^abs(bsxfun(@minus,(1:p)',(1:p)))
+            
             X = normrnd(0,1,[n p]); 
             Beta = zeros(p,1);
             s = binornd(p,q);
@@ -97,7 +109,7 @@ for ns = 1:length(samples)
 
             final_model_med  = findMed(gamma_array, nmc);
             final_model_mode = findMode(gamma_array);
-
+            
             for j = 1: length(mpm_error)
                [mpm_error(j), mpm_fp(j)] = mpm_err(gamma_array, final_model_med,p,j*interval); %get rid of this for speed
                [mode_error(j), mode_fp(j)] = mode_err(gamma_array, final_model_mode,p,j*interval);
@@ -120,6 +132,21 @@ for ns = 1:length(samples)
             
             [end_med_diff(ps,r), end_med_fp(ps,r)] = mpm_err(gamma_array, final_model_med, p, nmc);
             [end_mode_diff(ps,r),  end_mode_fp(ps,r)] = mode_err(gamma_array, final_model_mode, p, nmc);
+            [bma_model, bma_mse] = bma(gamma_array,Tau2,Sigma2,XX,Xy,X,y);
+            med_size(ps,r) = sum(final_model_med);
+            mode_size(ps,r) = sum(final_model_mode);
+
+            %compare against lasso
+            [B, FitInfo] = lasso(X,y,'CV',10);
+            idxLambda1SE = FitInfo.Index1SE;
+            lasso_model = B(:,idxLambda1SE);
+            lasso_mse = FitInfo.MSE(idxLambda1SE);
+            mse_diff(ps,r) = lasso_mse - bma_mse;
+            
+            [one, one_prob(ps,r), two, two_prob(ps,r), three, three_prob(ps,r)] = findMode3(gamma_array,XX,Xy,yy,Tau2,n,q);
+            size_one(ps,r) = sum(one);
+            size_two(ps,r) = sum(two);
+            size_three(ps,r) = sum(three);
         end
     end
     average_med_diff(ns,:)=transpose(mean(end_med_diff,2));
@@ -172,8 +199,34 @@ function mode_gamma=findMode(gamma_array)
     gamma_decimal = bi2de(gamma_array');
     mode_decimal = mode(gamma_decimal);
     mode_gamma = de2bi(mode_decimal);
-    mode_gamma(d)=0;
+    if(length(mode_gamma)<d)
+        mode_gamma(d)=0;
+    end
     mode_gamma = mode_gamma';
+end
+
+function [first, first_prob, second, second_prob, third, third_prob] = findMode3(gamma_array,XX,Xy,yy,Tau2,n,q)
+    [d, w]=size(gamma_array);
+    gamma_decimal = bi2de(gamma_array');
+    [m, bin] = hist(gamma_decimal,unique(gamma_decimal));
+    [~,idx] = sort(-m);
+    top_3 = bin(idx);
+    freq = m(idx);
+    first = de2bi(top_3(1))';
+    %M_first = logml(XX,Xy,yy,first,Tau2,n);
+    %log_first_prior = log_pi_gamma(q,first);
+    %first_prob = exp(M_first + log_first_prior); 
+    first_prob = freq(1)/w;
+    second = de2bi(top_3(2))';
+    %M_second = logml(XX,Xy,yy,second,Tau2,m);
+    %log_second_prior = log_pi_gamma(q,second);
+    %second_prob = exp(M_second + log_second_prior);
+    second_prob = freq(2)/w;
+    third = de2bi(top_3(3))';
+    %M_third = logml(XX,Xy,yy,third,Tau2,m);
+    %log_third_prior = log_pi_gamma(q,third);
+    %third_prob = exp(M_third + log_third_prior);
+    third_prob = freq(3)/w;
 end
 
 %Calculate error and false positive rate for MPM compared to empirical
@@ -227,10 +280,21 @@ function M = logml(XX,Xy,yy,gamma,Tau2,n)
     end
 end
 
-function posterior_mean = bma(gamma_array,p,nmc)
-    beta_sampled = zeros(p,nmc);
-    for i = 1:nmc
-        beta_sampled(:,i) = normrnd(0,sqrt(Tau2),[p 1]).*gamma_array(:,i);
-    end
-    posterior_mean = ??;
+function model=beta_post(gamma,Tau2,Sigma2,XX,Xy)
+    m=length(gamma);
+    gamma_ind = gamma*gamma';
+    XXg = XX.*gamma_ind;
+    Xyg = Xy.*gamma;
+    Ig = eye(m);
+    model = inv(Tau2.*XXg + Sigma2.*Ig)*Xyg;
+end
+
+function [bma_model, mse] = bma(gamma_array,Tau2,Sigma2,XX,Xy,X,y)
+  [pred, nm] = size(gamma_array);
+  betas = zeros(pred,nm);
+  for i = 1:nm
+      betas(:,i) = beta_post(gamma_array(:,i),Tau2,Sigma2,XX,Xy);
+  end
+  bma_model = mean(betas,2);
+  mse =  mean(X*bma_model - y).^2;
 end
